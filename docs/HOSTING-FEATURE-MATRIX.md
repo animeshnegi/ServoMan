@@ -19,41 +19,13 @@ ServoMan is being built as a real self-hosted hosting/server control panel, not 
 
 ## GitHub / Git management
 
-When `SERVOMAN_GITHUB_TOKEN` is configured, the panel API supports:
-
-- Repository listing
-- Branch listing
-- Commit history
-- Releases
-- GitHub Actions workflow listing and dispatch
-- Open issue listing and issue creation
-- Creating branches from a known commit
-- Deployment/repository audit events
+When `SERVOMAN_GITHUB_TOKEN` is configured, the panel API supports repository listing, branch listing, commit history, releases, GitHub Actions workflow listing/dispatch, open issue listing/creation, branch creation from a known commit, and audit events.
 
 Tokens stay server-side and are never returned by the API.
 
 ## Hosting-panel capabilities
 
-The target feature set includes the functionality normally spread across paid hosting panels and their add-ons:
-
-- Domains and virtual hosts
-- SSL / Let's Encrypt and renewal testing
-- DNS records and zone management
-- File management
-- FTP accounts
-- Databases and database users
-- Cron jobs
-- Backups and scheduled backup jobs
-- Docker/container management
-- Firewall and security checks
-- Service management
-- Server metrics and process inspection
-- SSH key generation
-- Email domains/mailboxes and SMTP testing
-- Email sending-domain verification
-- VoIP/Asterisk management when installed
-- Role-based access control and audit logs
-- AI operations assistant
+The target feature set includes domains/virtual hosts, SSL, DNS, file management, FTP, databases, cron, backups, Docker, firewall/security, services, monitoring, SSH keys, email, sending-domain verification, VoIP/Asterisk, RBAC/audit logs and the AI operations assistant.
 
 ## Production rule
 
