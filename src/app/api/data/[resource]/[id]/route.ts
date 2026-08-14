@@ -6,9 +6,18 @@ import { ENTITY_MAP } from "@/lib/entities";
 import { audit } from "@/lib/audit";
 import { tableMap, buildRow, firstLabel } from "@/lib/crud";
 import { getAuthContext, getClientIp } from "@/lib/security";
+import { permissionForResource } from "@/lib/resource-permissions";
 import { redactValue } from "@/lib/redact";
 
 export const dynamic = "force-dynamic";
+
+function authorize(req: NextRequest, resource: string, method: string) {
+  const ctx = getAuthContext(req);
+  const permission = permissionForResource(resource, method);
+  if (!permission) return null;
+  if (!ctx.permissions.has("*") && !ctx.permissions.has(permission)) return null;
+  return ctx;
+}
 
 function parseId(id: string) {
   const numericId = Number(id);
@@ -20,12 +29,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ resource: s
   const table: any = tableMap[resource];
   if (!table) return Response.json({ error: "Unknown resource" }, { status: 404 });
   try {
-    const auth = getAuthContext(req);
-    if (!auth.permissions.has("*") && !auth.permissions.has("sites.read") && resource !== "auditLogs") {
-      // Resource-specific access is enforced by the collection route and middleware;
-      // this fallback prevents accidental direct exposure of an unmapped table.
-      return Response.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const auth = authorize(req, resource, "GET");
+    if (!auth) return Response.json({ error: "Forbidden" }, { status: 403 });
     const numericId = parseId(id);
     if (!numericId) return Response.json({ error: "Invalid id" }, { status: 400 });
     const rows = await db.select().from(table).where(eq(table.id, numericId)).limit(1);
@@ -41,7 +46,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ resource:
   const entity = ENTITY_MAP[resource];
   if (!table || !entity) return Response.json({ error: "Unknown resource" }, { status: 404 });
   try {
-    const auth = getAuthContext(req);
+    const auth = authorize(req, resource, "PATCH");
+    if (!auth) return Response.json({ error: "Forbidden" }, { status: 403 });
     const numericId = parseId(id);
     if (!numericId) return Response.json({ error: "Invalid id" }, { status: 400 });
     const body = await req.json();
@@ -65,7 +71,8 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ resource
   const entity = ENTITY_MAP[resource];
   if (!table || !entity) return Response.json({ error: "Unknown resource" }, { status: 404 });
   try {
-    const auth = getAuthContext(req);
+    const auth = authorize(req, resource, "DELETE");
+    if (!auth) return Response.json({ error: "Forbidden" }, { status: 403 });
     const numericId = parseId(id);
     if (!numericId) return Response.json({ error: "Invalid id" }, { status: 400 });
     const existing = await db.select().from(table).where(eq(table.id, numericId)).limit(1);
