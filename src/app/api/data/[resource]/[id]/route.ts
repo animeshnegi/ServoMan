@@ -10,6 +10,7 @@ import { permissionForResource } from "@/lib/resource-permissions";
 import { redactValue } from "@/lib/redact";
 import { createOrUpdateNginxSite, deleteNginxSite } from "@/lib/nginx-sites";
 import { dropDatabase, dropDatabaseUser, createDatabaseUser } from "@/lib/database-ops";
+import { removeContainer } from "@/lib/docker-ops";
 import { firewallRule } from "@/lib/server-ops";
 import { databases } from "@/db/schema";
 export const dynamic = "force-dynamic";
@@ -31,6 +32,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ resource
     if (resource === "sites") await deleteNginxSite(String(existing[0].domain));
     if (resource === "databases") await dropDatabase(String(existing[0].name), String(existing[0].engine));
     if (resource === "dbUsers") { const d = (await db.select().from(databases).where(eq(databases.id, Number(existing[0].dbId))).limit(1))[0]; if (d) await dropDatabaseUser(String(existing[0].username), d.engine); }
+    if (resource === "containers") await removeContainer(String(existing[0].name));
     if (resource === "firewallRules" && existing[0].enabled !== false) await firewallRule("delete", Number(existing[0].port), String(existing[0].protocol || "tcp"), String(existing[0].source || "0.0.0.0/0"));
     await db.delete(table).where(eq(table.id, numericId)); await audit(`${entity.singular} deleted`, firstLabel(entity, existing[0]), "", auth.user, getClientIp(req)); return Response.json({ ok: true });
   } catch (e: any) { return Response.json({ error: e?.status ? e.message : String(e?.message || "Delete failed") }, { status: e?.status || 500 }); }
