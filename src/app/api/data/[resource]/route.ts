@@ -10,6 +10,7 @@ import { permissionForResource } from "@/lib/resource-permissions";
 import { redactValue } from "@/lib/redact";
 import { createOrUpdateNginxSite } from "@/lib/nginx-sites";
 import { createDatabase, createDatabaseUser } from "@/lib/database-ops";
+import { firewallRule } from "@/lib/server-ops";
 import { databases } from "@/db/schema";
 export const dynamic = "force-dynamic";
 function authorize(req: NextRequest, resource: string, method: string) { const ctx = getAuthContext(req); const permission = permissionForResource(resource, method); if (!permission) return null; if (!ctx.permissions.has("*") && !ctx.permissions.has(permission)) return null; return ctx; }
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ resource: 
     if (resource === "sites") await createOrUpdateNginxSite({ domain: String(row.domain), rootPath: String(row.rootPath), type: String(row.type || "static"), port: Number(row.port || 3000), phpVersion: String(row.phpVersion || "8.3") });
     if (resource === "databases") await createDatabase(String(row.name), String(row.engine || "postgresql"));
     if (resource === "dbUsers") { const d = (await db.select().from(databases).where(eq(databases.id, Number(row.dbId))).limit(1))[0]; if (!d) return Response.json({ error: "Target database not found" }, { status: 404 }); await createDatabaseUser(String(row.username), String(row.password), d.name, d.engine, String(row.privileges || "ALL")); }
+    if (resource === "firewallRules" && row.enabled !== false) await firewallRule(String(row.action || "allow") as "allow" | "deny" | "delete", Number(row.port), String(row.protocol || "tcp"), String(row.source || "0.0.0.0/0"));
     const result: any = await db.insert(table).values(row).returning(); const inserted = Array.isArray(result) ? result[0] : result; await audit(`${entity.singular} created`, firstLabel(entity, inserted), "", auth.user, getClientIp(req)); return Response.json(redactValue(inserted));
   } catch (e: any) { return Response.json({ error: e?.status ? e.message : String(e?.message || "Create failed") }, { status: e?.status || 500 }); }
 }
