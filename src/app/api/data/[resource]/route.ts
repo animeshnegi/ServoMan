@@ -7,16 +7,15 @@ import { audit } from "@/lib/audit";
 import { tableMap, buildRow, firstLabel } from "@/lib/crud";
 import { getAuthContext, getClientIp } from "@/lib/security";
 import { permissionForResource } from "@/lib/resource-permissions";
+import { redactValue } from "@/lib/redact";
 
 export const dynamic = "force-dynamic";
 
 function authorize(req: NextRequest, resource: string, method: string) {
   const ctx = getAuthContext(req);
   const permission = permissionForResource(resource, method);
-  if (!permission) throw new Error("Unknown resource");
-  if (!ctx.permissions.has("*") && !ctx.permissions.has(permission)) {
-    return null;
-  }
+  if (!permission) return null;
+  if (!ctx.permissions.has("*") && !ctx.permissions.has(permission)) return null;
   return ctx;
 }
 
@@ -32,7 +31,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ resource: s
     const order = url.searchParams.get("order") === "desc" ? desc : asc;
     const col = table[sort] ?? table.id;
     const rows = await db.select().from(table).orderBy(order(col));
-    return Response.json(rows, { headers: { "Cache-Control": "no-store" } });
+    return Response.json(rows.map(redactValue), { headers: { "Cache-Control": "no-store" } });
   } catch (e: any) {
     if (e?.status) return Response.json({ error: e.message }, { status: e.status });
     return Response.json({ error: "Query failed" }, { status: 500 });
@@ -55,7 +54,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ resource: 
     const result: any = await db.insert(table).values(row).returning();
     const inserted = Array.isArray(result) ? result[0] : result;
     await audit(`${entity.singular} created`, firstLabel(entity, inserted), "", auth.user, getClientIp(req));
-    return Response.json(inserted);
+    return Response.json(redactValue(inserted));
   } catch (e: any) {
     if (e?.status) return Response.json({ error: e.message }, { status: e.status });
     return Response.json({ error: "Create failed" }, { status: 500 });
