@@ -8,27 +8,20 @@ const SAFE_NAME = /^[a-zA-Z0-9._:@/+,-]+$/;
 const SAFE_SERVICE = /^(nginx|docker|postfix|dovecot|fail2ban|redis|postgresql(?:@[0-9]+)?|mysql|mariadb|php[0-9.]+-fpm)$/;
 const SAFE_DOMAIN = /^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/;
 const BACKUP_ROOT = process.env.SERVOMAN_BACKUP_ROOT || "/backups/servoman";
-
-export class ServerOperationError extends Error {
-  status: number;
-  constructor(message: string, status = 500) { super(message); this.status = status; }
-}
+export class ServerOperationError extends Error { status: number; constructor(message: string, status = 500) { super(message); this.status = status; } }
 function assertSafeName(value: string, label: string) { if (!SAFE_NAME.test(value) || value.includes("..")) throw new ServerOperationError(`Invalid ${label}`, 400); }
 function assertDomain(domain: string) { if (!SAFE_DOMAIN.test(domain)) throw new ServerOperationError("Invalid domain", 400); }
-async function run(command: string, args: string[], options: { timeout?: number; cwd?: string } = {}) {
-  try { const result = await exec(command, args, { timeout: options.timeout ?? 120_000, cwd: options.cwd, maxBuffer: 4 * 1024 * 1024, windowsHide: true }); return { stdout: result.stdout.trim(), stderr: result.stderr.trim() }; }
-  catch (e: any) { throw new ServerOperationError(String(e?.stderr || e?.stdout || e?.message || "command failed").replace(/\s+/g, " ").slice(0, 1000), 500); }
-}
+async function run(command: string, args: string[], options: { timeout?: number; cwd?: string } = {}) { try { const result = await exec(command, args, { timeout: options.timeout ?? 120_000, cwd: options.cwd, maxBuffer: 4 * 1024 * 1024, windowsHide: true }); return { stdout: result.stdout.trim(), stderr: result.stderr.trim() }; } catch (e: any) { throw new ServerOperationError(String(e?.stderr || e?.stdout || e?.message || "command failed").replace(/\s+/g, " ").slice(0, 1000), 500); } }
 async function privileged(command: string, args: string[], options: { timeout?: number; cwd?: string } = {}) { if (typeof process.getuid === "function" && process.getuid() === 0) return run(command, args, options); return run("sudo", ["-n", command, ...args], options); }
 async function ensureBackupRoot() { await privileged("mkdir", ["-p", BACKUP_ROOT]); await privileged("chmod", ["700", BACKUP_ROOT]); }
 function backupPath(name: string, ext: string) { assertSafeName(name, "backup name"); return path.join(BACKUP_ROOT, `${name}${ext}`); }
 function safeWebsiteRoot(target: string) { const resolved = path.resolve(target); const allowed = ["/var/www", "/www", "/srv", "/home"]; if (!allowed.some((prefix) => resolved === prefix || resolved.startsWith(prefix + path.sep))) throw new ServerOperationError("Path is outside allowed website roots", 400); return resolved; }
 function safeArchive(file: string) { const resolved = path.resolve(file); if (!resolved.startsWith(path.resolve(BACKUP_ROOT) + path.sep)) throw new ServerOperationError("Backup archive is outside the backup root", 400); return resolved; }
-
 export async function docker(action: "start" | "stop" | "restart", name: string) { assertSafeName(name, "container name"); await run("docker", ["container", action, name]); return (await run("docker", ["inspect", "--format", "{{.State.Status}}", name])).stdout; }
 export async function dockerLogs(name: string, tail = 200) { assertSafeName(name, "container name"); const n = Math.max(1, Math.min(2000, Number(tail) || 200)); const result = await run("docker", ["container", "logs", "--timestamps", "--tail", String(n), name]); return result.stdout || result.stderr; }
 export async function service(action: "start" | "stop" | "restart" | "reload" | "status", serviceName: string) { if (!SAFE_SERVICE.test(serviceName)) throw new ServerOperationError("Service is not allowed", 400); if (action === "status") return (await privileged("systemctl", ["is-active", serviceName])).stdout; await privileged("systemctl", [action, serviceName]); return (await privileged("systemctl", ["is-active", serviceName])).stdout; }
-export async function firewall(enabled: boolean, confirmDisable = false) { if (!enabled && !confirmDisable) throw new ServerOperationError("Disabling the firewall requires explicit confirmation", 400); await privileged("ufw", enabled ? ["--force", "enable"] : ["disable"]); return (await privileged("ufw", ["status", "verbose"])).stdout; }
+export async function firewallStatus() { return (await privileged("ufw", ["status", "verbose"])).stdout; }
+export async function firewall(enabled: boolean, confirmDisable = false) { if (!enabled && !confirmDisable) throw new ServerOperationError("Disabling the firewall requires explicit confirmation", 400); await privileged("ufw", enabled ? ["--force", "enable"] : ["disable"]); return firewallStatus(); }
 export async function firewallRule(action: "allow" | "deny" | "delete", port: number, protocol = "tcp", source?: string) { if (!Number.isInteger(port) || port < 1 || port > 65535) throw new ServerOperationError("Invalid firewall port", 400); const proto = protocol.toLowerCase(); if (!/^(tcp|udp)$/.test(proto)) throw new ServerOperationError("Invalid firewall protocol", 400); if (source && !/^[0-9a-fA-F:.\/]+$/.test(source)) throw new ServerOperationError("Invalid firewall source", 400); const args = action === "delete" ? ["delete", "allow", `${port}/${proto}`] : [action, `${port}/${proto}`]; if (source) args.push("from", source); await privileged("ufw", args); return (await privileged("ufw", ["status", "numbered"])).stdout; }
 export async function issueCertificate(domain: string, email: string, renew = false) { assertDomain(domain); if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ServerOperationError("A valid ACME email is required", 400); if (renew) await privileged("certbot", ["renew", "--cert-name", domain, "--non-interactive"]); else await privileged("certbot", ["certonly", "--nginx", "-d", domain, "--non-interactive", "--agree-tos", "--email", email]); return (await privileged("certbot", ["certificates", "--cert-name", domain])).stdout; }
 export async function renewCertificates(dryRun = false) { return (await privileged("certbot", dryRun ? ["renew", "--dry-run", "--non-interactive"] : ["renew", "--non-interactive"], { timeout: 180_000 })).stdout; }
