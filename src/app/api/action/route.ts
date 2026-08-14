@@ -7,10 +7,9 @@ import { sites, certs, cronJobs, containers, backups, backupJobs, databases, cam
 import { audit } from "@/lib/audit";
 import { pullRepo, resolveRepoDir } from "@/lib/git";
 import { authorizeAction } from "@/lib/action-security";
-import { docker, dockerLogs, service, firewall, firewallStatus, firewallRule, issueCertificate, renewCertificates, backupDirectory, restoreDirectory, backupDatabase, restoreDatabase, generateSshKey, systemReboot, cleanup } from "@/lib/server-ops";
+import { docker, dockerLogs, service, firewall, firewallStatus, firewallRule, issueCertificate, renewCertificates, backupDirectory, restoreDirectory, backupDatabase, restoreDatabase, generateSshKey, voipCall, voipTrunkTest, systemReboot, cleanup } from "@/lib/server-ops";
 import { createOrUpdateNginxSite, disableNginxSite, enableNginxSite } from "@/lib/nginx-sites";
 import { smtpTest } from "@/lib/smtp";
-
 export const dynamic = "force-dynamic";
 function b64(hex: string) { return Buffer.from(hex, "hex").toString("base64"); }
 function buildDomainRecords(domain: string, selector: string) { const h = crypto.createHash("sha256").update(domain + ":" + selector).digest("hex"); const p = b64("3082010a0282010100" + h.slice(0, 192) + "0203010001"); const body = `v=DKIM1; k=rsa; p=${p}`; return { spf: "v=spf1 include:spf.servoman.io ~all", dkimHash: h.slice(0, 24), dkim: (body.match(/.{1,120}/g) || [body]).map((c) => `"${c}"`).join(" "), selector, dmarc: `v=DMARC1; p=quarantine; rua=mailto:dmarc+${domain.replace(/[.@]/g, "-")}@servoman.io; fo=1; adkim=r; aspf=r` }; }
@@ -49,7 +48,8 @@ export async function POST(req: NextRequest) {
       case "send.records": { const d = (await db.select().from(sendDomains).where(eq(sendDomains.id, id)).limit(1))[0]; if (!d) return Response.json({ ok: false, message: "Sending domain not found" }, { status: 404 }); const rec = buildDomainRecords(d.domain, d.dkimSelector || "servoman"); await db.update(sendDomains).set({ spfRecord: rec.spf, dkimRecord: rec.dkim, dmarcRecord: rec.dmarc }).where(eq(sendDomains.id, id)); return Response.json({ ok: true, records: rec }); }
       case "send.verify": { const d = (await db.select().from(sendDomains).where(eq(sendDomains.id, id)).limit(1))[0]; if (!d) return Response.json({ ok: false, message: "Sending domain not found" }, { status: 404 }); const rec = buildDomainRecords(d.domain, d.dkimSelector || "servoman"); const [txt] = await dns.resolveTxt(`${rec.selector}._domainkey.${d.domain}`).catch(() => [[]] as string[][]); const verified = txt?.join("").includes(rec.dkimHash) || false; if (verified) await db.update(sendDomains).set({ status: "verified" }).where(eq(sendDomains.id, id)); return Response.json({ ok: verified, verified, message: verified ? `${d.domain} verified` : `${d.domain}: DNS record not confirmed` }); }
       case "ssh.generate": { const k = (await db.select().from(sshKeys).where(eq(sshKeys.id, id)).limit(1))[0]; if (!k) return Response.json({ ok: false, message: "SSH key not found" }, { status: 404 }); const result = await generateSshKey(k.name.replace(/[^a-zA-Z0-9._-]/g, "-"), k.keyType, k.comment); await db.update(sshKeys).set({ keyPath: result.keyPath, publicKey: result.publicKey, status: "active" }).where(eq(sshKeys.id, id)); return Response.json({ ok: true, publicKey: result.publicKey, keyPath: result.keyPath }); }
-      case "voip.call": case "voip.trunk.test": return Response.json({ ok: false, message: "SIP operations require a configured Asterisk/FreeSWITCH adapter. ServoMan will not report a simulated call." }, { status: 501 });
+      case "voip.call": { const destination = String(body.destination || ""); return Response.json({ ok: true, message: await voipCall(destination) || `Call originated to ${destination}` }); }
+      case "voip.trunk.test": { const name = String(body.name || ""); return Response.json({ ok: true, output: await voipTrunkTest(name) }); }
       default: return Response.json({ ok: false, message: `Unsupported server action: ${action}` }, { status: 501 });
     }
   } catch (e) { return errorResponse(e); }
