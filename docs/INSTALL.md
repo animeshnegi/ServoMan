@@ -1,255 +1,476 @@
-# SERVOMAN — Installation Guide (Ubuntu 24.04 LTS)
+# SERVOMAN Installation & Access Guide
 
-SERVOMAN is a **lightweight** self-hosted server & website control panel
-(cPanel / aaPanel class) with features those panels don't ship: an AI ops
-assistant, security scoring, git push-to-deploy, record-verified email
-sending and anomaly detection. Single Node process, ~120 MB RAM.
+This guide is the supported installation path for SERVOMAN on a fresh Ubuntu/Debian VPS.
+The installer is intended to be run as root through `sudo` and configures the panel as a systemd service behind Nginx.
 
----
+## 1. Requirements
 
-## 1. Quick install (recommended)
+Recommended:
 
-Upload the SERVOMAN project folder to your Ubuntu 24.04 cloud server, then:
+- Ubuntu 24.04 LTS
+- A fresh VPS with at least 2 GB RAM
+- Root or a sudo-enabled user
+- A public IPv4 address
+- Ports `22/tcp`, `80/tcp`, and `443/tcp` available
+- A domain name is recommended for HTTPS, but the first installation can be tested with the server IP
+
+Do **not** expose the application port `3100` directly to the Internet. SERVOMAN listens on `127.0.0.1:3100` through the systemd service and Nginx proxies public traffic to it.
+
+## 2. Download SERVOMAN
+
+For the public repository, the simplest method is:
 
 ```bash
-cd servoman
+git clone https://github.com/animeshnegi/ServoMan.git
+cd ServoMan
+```
+
+If you already uploaded the project to the server:
+
+```bash
+cd /path/to/ServoMan
+```
+
+Confirm that the installer and application files are present:
+
+```bash
+ls -la
+ls -la docs/INSTALL.md
+ls -la install.sh package.json
+```
+
+The installer intentionally checks that `package.json` exists in the current directory. Always run `install.sh` from the ServoMan project directory.
+
+## 3. Recommended installation
+
+Run:
+
+```bash
 sudo bash install.sh
 ```
 
-With optional extras:
+Optional components:
 
 ```bash
-sudo bash install.sh --with-dovecot   # IMAP/POP3 for the built-in mail server
-sudo bash install.sh --with-voip      # Asterisk SIP server for the VOIP manager
+sudo bash install.sh --with-dovecot
+sudo bash install.sh --with-voip
 sudo bash install.sh --with-dovecot --with-voip
 ```
 
-The installer is fully automated — it:
+The base installation includes the web panel stack and system services used by SERVOMAN. The optional flags add Dovecot mail access and/or Asterisk VOIP support.
 
-| Step | What happens |
-|------|--------------|
-| 1 | Installs system packages: Nginx, PostgreSQL 16, PHP-FPM 8.3, Python 3.12 (venv), Redis, Postfix, fail2ban, ufw |
-| 2 | Installs Node.js 22 LTS |
-| 3 | Creates an unprivileged `servoman` system user |
-| 4 | Creates the PostgreSQL database + user (password printed at the end) |
-| 5 | Copies the panel to `/opt/servoman` and writes `.env` |
-| 6 | Runs `npm install`, `drizzle-kit push`, seeds demo data, `npm run build` |
-| 7 | Registers a `servoman.service` systemd unit (port 3100, memory capped at 512 MB) |
-| 8 | Wires Nginx as reverse proxy on port 80 with security headers |
-| 9 | Enables ufw and opens ports 22/80/443 (+ mail/VOIP ports with flags) |
+The installer performs these main tasks:
 
-After install, open `http://<your-server-ip>` and the panel appears.
+1. Installs required OS packages.
+2. Installs Node.js 22 when a suitable Node version is not already available.
+3. Creates the `servoman` system user and `/opt/servoman` application directory.
+4. Creates the PostgreSQL `servoman` role and database.
+5. Copies the application into `/opt/servoman`.
+6. Generates `/opt/servoman/.env` with fresh database and proxy secrets.
+7. Creates the restricted sudo policy used by server operations.
+8. Runs dependency installation, database push, seed, and production build.
+9. Creates and enables `servoman.service`.
+10. Configures Nginx as the authenticated reverse proxy.
+11. Enables UFW and allows SSH, HTTP, and HTTPS.
 
----
+## 4. The first and most reliable way to access the panel
 
-## 1.5 Accessing the admin panel on a live Ubuntu server
+At the end of a successful installation, the installer prints the panel URL and the generated HTTP Basic Authentication credentials.
+
+You will see output similar to:
 
 ```text
-Your computer ──(ssh)──> Ubuntu 24.04 cloud server ──> SERVOMAN
+[ ok ] SERVOMAN 3.0.0 installed
+[ ok ] URL: http://SERVER_IP
+[ ok ] Basic-auth user: servoman
+[ ok ] Basic-auth password: <generated-password>
+[ ok ] Database password: <generated-password>
 ```
 
-1. **Get a server** — AWS EC2, DigitalOcean, Hetzner, Vultr, Linode… choose Ubuntu 24.04 LTS.
-2. **Upload SERVOMAN** — from your machine:
+Open the printed URL in your browser:
 
-   ```bash
-   scp -r servoman user@<server-ip>:~/       # or: git clone <your-repo> on the server
-   ```
+```text
+http://SERVER_IP
+```
 
-3. **SSH in and install**:
+Use:
 
-   ```bash
-   ssh user@<server-ip>
-   cd servoman
-   sudo bash install.sh
-   ```
+```text
+Username: servoman
+Password: the generated Basic Auth password printed by install.sh
+```
 
-4. **Open the panel** in your browser: `http://<server-ip>`.
-   The installer prints your **login** (HTTP basic auth, generated at install time):
-   - user: `servoman`, password: the random one printed on screen
-   - change it any time: `htpasswd -b /etc/nginx/.servoman_admin servoman NewPass123`
-   - also update the seeded panel admin password in **Panel Users** (Settings page)
+### Important
 
-5. **Open the firewall port** if your cloud provider blocks port 80 (AWS/DO security
-   groups often need an inbound rule for 80/tcp and 443/tcp added in their console).
+The generated password is intentionally not stored in the Git repository. Save it securely immediately after installation.
 
-6. **Enable HTTPS** — issue a certificate for the panel's domain from the
-   **SSL v2** page (or `certbot --nginx -d panel.yourdomain.com`). SERVOMAN also
-   supports fail2ban for the panel and you can restrict access further:
-   `ufw allow from <your-ip> to any port 80,443`.
-
-7. **Prefer no public exposure at all?** Use an SSH tunnel from your laptop:
-
-   ```bash
-   ssh -L 8443:127.0.0.1:80 user@<server-ip>
-   # then open http://127.0.0.1:8443 in your browser
-   ```
-
-Service management: `systemctl restart servoman` · `journalctl -u servoman -f`.
-
----
-
-## 2. Manual install (if you prefer step-by-step)
+If you lose it, generate a new Nginx Basic Auth password with:
 
 ```bash
-# 1. system packages
-sudo apt update
-sudo apt install -y curl gnupg ca-certificates build-essential git python3 python3-venv \
-  nginx postgresql redis-server postfix fail2ban ufw php-fpm php-cli
+sudo htpasswd -b /etc/nginx/.servoman_admin servoman 'YOUR_NEW_PASSWORD'
+sudo nginx -t
+sudo systemctl reload nginx
+```
 
-# 2. Node.js 22
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
-sudo apt install -y nodejs
+Do not put the password in this documentation or commit it to GitHub.
 
-# 3. database
-sudo -u postgres psql -c "CREATE USER servoman WITH PASSWORD 'choose-a-password';"
-sudo -u postgres psql -c "CREATE DATABASE servoman OWNER servoman;"
+## 5. If the browser cannot open the panel
 
-# 4. build & seed
-echo 'DATABASE_URL=postgresql://servoman:choose-a-password@127.0.0.1:5432/servoman' > .env
-npm install
-npx drizzle-kit push
-npx tsx src/db/seed.ts
+Run these checks on the VPS in this order.
+
+### Check the SERVOMAN service
+
+```bash
+sudo systemctl status servoman --no-pager
+```
+
+Expected:
+
+```text
+Active: active (running)
+```
+
+### Check the application logs
+
+```bash
+sudo journalctl -u servoman -n 100 --no-pager
+```
+
+Follow logs live:
+
+```bash
+sudo journalctl -u servoman -f
+```
+
+### Check that port 3100 is listening locally
+
+```bash
+sudo ss -lntp | grep ':3100'
+```
+
+It should normally be reachable only through the local proxy path.
+
+### Check Nginx
+
+```bash
+sudo nginx -t
+sudo systemctl status nginx --no-pager
+```
+
+### Check HTTP locally from the VPS
+
+```bash
+curl -I http://127.0.0.1
+```
+
+If Basic Auth is enabled, a `401 Unauthorized` response is expected without credentials. That means Nginx is reachable and protecting the panel.
+
+### Check the firewall
+
+```bash
+sudo ufw status verbose
+```
+
+At minimum, SSH and HTTP should be allowed during the initial setup.
+
+## 6. Cloud-provider firewall / security group
+
+UFW is only one firewall layer. Your VPS provider may also have an external firewall/security group.
+
+Make sure the provider allows:
+
+```text
+22/tcp   SSH
+80/tcp   HTTP
+443/tcp  HTTPS
+```
+
+Do not open port `3100` publicly unless you have a specific reason and understand the security implications.
+
+## 7. HTTPS with a domain
+
+For production use, put SERVOMAN behind HTTPS.
+
+Point your domain's A record to the VPS public IP, for example:
+
+```text
+panel.example.com  ->  SERVER_IP
+```
+
+Then obtain a certificate with Certbot:
+
+```bash
+sudo certbot --nginx -d panel.example.com
+```
+
+After Certbot finishes, test:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Then use:
+
+```text
+https://panel.example.com
+```
+
+Do not send passwords or API keys over plain HTTP on an Internet-facing production server.
+
+## 8. SSH tunnel option for private administration
+
+If the panel should not be publicly accessible, an SSH tunnel is a safer option.
+
+Keep SERVOMAN behind the local Nginx listener and from your own computer run:
+
+```bash
+ssh -L 8443:127.0.0.1:80 user@SERVER_IP
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8443
+```
+
+This is useful for initial administration before a domain/HTTPS setup is complete.
+
+## 9. Service management
+
+Start:
+
+```bash
+sudo systemctl start servoman
+```
+
+Stop:
+
+```bash
+sudo systemctl stop servoman
+```
+
+Restart:
+
+```bash
+sudo systemctl restart servoman
+```
+
+Enable at boot:
+
+```bash
+sudo systemctl enable servoman
+```
+
+Check status:
+
+```bash
+sudo systemctl status servoman --no-pager
+```
+
+View recent logs:
+
+```bash
+sudo journalctl -u servoman -n 100 --no-pager
+```
+
+Follow logs:
+
+```bash
+sudo journalctl -u servoman -f
+```
+
+## 10. Application files and secrets
+
+The installed application is located at:
+
+```text
+/opt/servoman
+```
+
+Important files:
+
+```text
+/opt/servoman/.env
+/etc/systemd/system/servoman.service
+/etc/nginx/sites-available/servoman
+/etc/nginx/.servoman_admin
+/etc/sudoers.d/servoman
+/backups/servoman
+```
+
+The `.env` file contains generated secrets and database credentials. Never commit it to GitHub.
+
+Check permissions if needed:
+
+```bash
+sudo ls -la /opt/servoman/.env
+sudo ls -la /etc/nginx/.servoman_admin
+sudo ls -la /etc/sudoers.d/servoman
+```
+
+## 11. Updating SERVOMAN
+
+Back up the current installation before upgrading.
+
+Then update the source:
+
+```bash
+cd /path/to/ServoMan
+git pull
+```
+
+Run the installer again:
+
+```bash
+sudo bash install.sh
+```
+
+The installer recreates the application deployment and restarts the systemd service.
+
+After an update, always verify:
+
+```bash
+sudo systemctl status servoman --no-pager
+sudo nginx -t
+sudo journalctl -u servoman -n 100 --no-pager
+```
+
+## 12. Development validation before installing on a VPS
+
+From the repository directory:
+
+```bash
+npm install --no-audit --no-fund
+npm run typecheck
+npm run lint
 npm run build
-
-# 5. run (see install.sh for the systemd unit + nginx site)
-PORT=3100 npm run start
 ```
 
----
+All three checks must pass before treating a commit as installation-ready.
 
-## 2b. Why SERVOMAN is so small (measured)
+The GitHub Actions CI performs the same validation sequence on pushes and pull requests:
 
-| What | Size | Notes |
-|------|------|-------|
-| SERVOMAN's own code (`src/`) | **604 KB** | 49 files, ~8,300 lines |
-| Full uploadable package (code + installer + docs) | **~1 MB** | without `node_modules` |
-| Production build output (`.next/`) | ~22 MB | compiled JavaScript |
-| Node toolchain (`node_modules/`) | ~755 MB | shared React/Next.js libraries — installed on the server but identical to any Node app's runtime |
-| RAM while running | **~128 MB, one process** | measured on the live panel (Server page shows it) |
+```text
+npm install
+npm run typecheck
+npm run lint
+npm run build
+```
 
-cPanel/aaPanel are 500 MB+ because they **bundle their own copies of everything**:
-prebuilt Apache + multiple compiled PHP versions, their own Perl/Python stacks,
-MySQL/MariaDB, mail + antivirus suites, and per-OS binary archives. They also keep
-many of those services running permanently, which is why a cPanel box commonly sits
-at 1–2 GB+ of RAM just for the panel.
+If TypeScript fails, do not install that commit on a production VPS.
 
-SERVOMAN takes the opposite approach — it is an **orchestrator, not a bundler**:
+## 13. Python projects managed by SERVOMAN
 
-1. It reuses the services your server already needs (Nginx, PHP-FPM, PostgreSQL,
-   Postfix) via `apt` instead of shipping its own compiles.
-2. It is a **single Node.js process** — one API + UI, no Apache/PHP/Perl needed
-   to run the panel itself, and systemd caps it at 512 MB RAM.
-3. Its "engine" is thin code that calls existing OS tools: `git` for deployments,
-   the shell for the terminal, `/proc` for metrics, the filesystem for the file
-   manager. Zero duplicated binaries.
-4. The frontend is plain JSON APIs + a modern JS client — no server-rendered
-   PHP pages, no per-feature daemons.
+SERVOMAN can manage Python applications such as Flask, Django, and FastAPI using per-project virtual environments and service processes.
 
-So the *panel application* is ~1 MB of code you can read and audit; the only
-installed runtime is the standard Node.js ecosystem your server would carry anyway.
+A typical application should have its own directory, for example:
 
-## 3. Feature map
+```text
+/var/www/example-app
+```
 
-**Web hosting**
-- **Websites** — unlimited Nginx virtual hosts; PHP 7.4–8.3, Node, Flask, static types
-- **Git Deployments** — real git on the server: clone from GitHub/GitLab, pull branches,
-  commit history, and **push-to-deploy webhooks** (every `git push` auto-rebuilds; secret
-  webhook URL per app, auto-deploy toggle, test-push button). Runtimes: Node.js (pm2),
-  Python/**Flask** (venv + gunicorn), PHP-FPM pools, static sites
-- **DNS** — zones + A/AAAA/CNAME/MX/TXT/NS/SRV/CAA records
+The Python environment should remain isolated from the system Python installation.
 
-**SSL v2**
-- Let's Encrypt ACME automation, 90-day auto renewal, wildcard + multi-SAN certs,
-  HSTS preload, OCSP stapling, cipher profiles, bulk renew-all
+For a Flask application, the normal deployment model is:
 
-**Email**
-- **Email Server** — Postfix + Dovecot stack: virtual mail domains, DKIM/SPF/DMARC,
-  mailboxes with quotas, catch-all routing
-- **Record-verified sending domains** — send transactional & campaign email from any
-  domain **without SMTP credentials**: SERVOMAN generates unique SPF/DKIM/DMARC records
-  per domain, you publish them at your DNS provider, then Verify checks them in public
-  DNS. Different records and daily counters per domain
-- **Campaigns** — bulk campaigns with per-domain sending identities, delivered/opened/
-  clicked/bounced tracking, queue send & pause
+```text
+Flask application
+       ↓
+Python virtual environment
+       ↓
+Gunicorn
+       ↓
+Nginx
+       ↓
+Internet
+```
 
-**VOIP**
-- **Extensions** — SIP/PJSIP/IAX2 with live registration status, test calls
-- **SIP trunks** — carrier connections (host/port/credentials/codecs/channels) with
-  SIP OPTIONS probe tests
-- **CDRs** — call detail records with billable seconds + cost
-- Requires Asterisk: re-run `sudo bash install.sh --with-voip`
+Do not expose the Gunicorn application port directly when Nginx can proxy it.
 
-**Server**
-- **Server & Cleanup page** — full OS/hardware/network details, panel process health
-  (RSS, event-loop lag), request-handling probe (6× API check with average latency),
-  one-click cleaning: page cache, /tmp, apt cache, rotated logs, docker images, old
-  backups — every run audited
+## 14. Backups
 
-**Beyond cPanel/aaPanel**
-- **AI Assistant** — chat with your server using live data (set `OPENAI_API_KEY` in
-  `.env` for the OpenAI engine; a built-in ops engine works without a key)
-- **Security Center** — continuous hardening score computed from real config
-- **Live health probes** — per-site HTTP status & latency checks
-- **Anomaly detection** — threshold alerts raised from real metric samples
-- Web terminal, file manager, process explorer, log tails, backups with retention,
-  Docker control, cron, FTP, firewall
+SERVOMAN uses:
 
----
+```text
+/backups/servoman
+```
 
-## 4. cPanel / aaPanel feature parity checklist
+The installer creates this directory with restricted permissions.
 
-| Area | cPanel / aaPanel feature | SERVOMAN |
-|------|--------------------------|----------|
-| Websites | Virtual hosts, subdomains | **Websites** — unlimited hosts, per-site PHP 7.4–8.3, Node, Python, static |
-| PHP | Version switch, extensions, ini limits | **PHP & Extensions** page + per-site version on Websites |
-| Python | Python Project Manager (aaPanel) | **Python Projects** — Flask/Django/FastAPI, 3.10–3.12, gunicorn/uvicorn/uwsgi |
-| Databases | MySQL/PostgreSQL + users + phpMyAdmin | **Databases** + DB users + one-click backups |
-| DNS | Zone editor, records | **DNS** zones + A/AAAA/CNAME/MX/TXT/NS/SRV/CAA |
-| SSL | AutoSSL / Let's Encrypt | **SSL v2** — wildcards, SANs, HSTS, OCSP, cipher profiles |
-| Email | Accounts, DKIM/SPF/DMARC, forwarders | **Email Server** — domains, mailboxes, quotas, catch-all + **record-verified sending domains** |
-| Marketing | (not in aaPanel) | **Campaigns** — open/click/bounce tracking, per-domain sending |
-| VOIP | (not in cPanel) | **VOIP** — SIP extensions, trunks, CDRs, test calls |
-| Files | File manager | **File Manager** — browse/edit/upload/chmod/rename/delete |
-| Terminal | Terminal (aaPanel) | **Terminal** — real shell, cd/history/clear |
-| Cron | Cron manager | **Cron Jobs** — schedules, run-now |
-| FTP | FTP accounts | **FTP Accounts** — quotas, path isolation |
-| Backups | Backup schedules | **Backups** — on-demand + scheduled jobs with retention |
-| Docker | Docker manager | **Docker** — start/stop/restart/logs |
-| Security | Security tools | **Firewall** rules + **Security Center** hardening score |
-| SSH | SSH keys | **SSH Keys** — generate key pairs on the server |
-| Monitoring | Charts | **Monitoring** — 24h history, anomaly alerts, thresholds |
-| Processes | Process manager | **Processes** — live CPU/RSS per task |
-| Logs | Log viewer | **Logs** — tail /var/log + panel audit trail |
-| Git | (not in cPanel) | **Deployments** — real clone/pull, commit history, push-to-deploy webhooks |
-| AI | (not in either) | **AI Assistant** with live server context |
-| Server | (basic info) | **Server & Cleanup** — full details, request-health probe, one-click cleaning |
+For important production systems, also maintain an off-server backup. A backup stored on the same VPS is not sufficient protection against disk failure, accidental deletion, or server compromise.
 
----
+## 15. Uninstall
 
-## 5. Environment variables (all optional)
+Before uninstalling, export any databases and backups you need.
 
-| Variable | Purpose |
-|----------|---------|
-| `OPENAI_API_KEY` | Enables the OpenAI engine for the AI assistant (server-side only) |
-| `OPENAI_MODEL` | Model override (default `gpt-4o-mini`) |
-| `DATABASE_URL` | PostgreSQL connection string (required) |
-
----
-
-## 6. Operations
+Stop and disable the service:
 
 ```bash
-systemctl restart servoman          # restart panel
-journalctl -u servoman -f           # follow panel logs
-sudo bash install.sh                # re-run to upgrade in place
-systemctl disable --now servoman && rm -rf /opt/servoman   # uninstall
+sudo systemctl disable --now servoman
 ```
 
-## 7. Security notes
+Then remove the application and related configuration only after confirming that you no longer need them.
 
-- The panel manages the whole server — expose it only over HTTPS / VPN / SSH tunnel.
-  For public exposure, add HTTP basic auth or SSO at the Nginx layer
-  (`/etc/nginx/sites-available/servoman`).
-- Change the seeded `admin` panel password from **Panel Users** in Settings
-  (the security scan flags weak passwords).
-- The web terminal blocks a set of destructive commands; treat it as root access.
+```bash
+sudo rm -rf /opt/servoman
+sudo rm -f /etc/systemd/system/servoman.service
+sudo rm -f /etc/nginx/sites-enabled/servoman
+sudo rm -f /etc/nginx/sites-available/servoman
+sudo rm -f /etc/nginx/.servoman_admin
+sudo rm -f /etc/sudoers.d/servoman
+sudo systemctl daemon-reload
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Do not delete PostgreSQL data or `/backups/servoman` until you have verified that no data is required.
+
+## 16. Security checklist before production
+
+- Use HTTPS for Internet-facing administration.
+- Keep port `3100` private.
+- Keep SSH protected with keys and disable password authentication when appropriate.
+- Restrict cloud-provider firewall rules to the ports you actually use.
+- Keep UFW enabled.
+- Store `/opt/servoman/.env` securely.
+- Never commit database passwords, proxy secrets, API keys, or generated Basic Auth credentials.
+- Keep regular off-server backups.
+- Review `journalctl -u servoman` after upgrades.
+- Run `npm run typecheck`, `npm run lint`, and `npm run build` before production deployment.
+
+## 17. Quick troubleshooting commands
+
+```bash
+# Service
+sudo systemctl status servoman --no-pager
+
+# Logs
+sudo journalctl -u servoman -n 200 --no-pager
+
+# Nginx
+sudo nginx -t
+sudo systemctl status nginx --no-pager
+
+# Listening ports
+sudo ss -lntup
+
+# Firewall
+sudo ufw status numbered
+
+# Local HTTP test
+curl -I http://127.0.0.1
+
+# Node version
+node --version
+npm --version
+
+# Installed application
+sudo ls -la /opt/servoman
+```
+
+If `servoman.service` is active but the browser returns `502 Bad Gateway`, inspect the SERVOMAN journal first. A 502 normally means Nginx cannot reach the application on the expected local port.
+
+If the browser returns `401 Unauthorized`, that is normally the Nginx Basic Auth layer working; enter the generated `servoman` credentials printed by the installer.
+
+If the browser times out, check both UFW and the VPS provider's external firewall/security group.
