@@ -12,7 +12,8 @@ export DEBIAN_FRONTEND=noninteractive
 DB_PASS="$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)"; PANEL_PASS="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16)"; PROXY_SECRET="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48)"; REPO_DIR="$(pwd)"
 log "Installing OS packages"
 apt-get update -yq
-apt-get install -yq curl ca-certificates gnupg git unzip rsync build-essential python3 python3-venv python3-pip nginx certbot python3-certbot-nginx php-fpm php-cli php-mbstring php-xml php-curl php-zip php-gd php-bcmath php-intl postgresql postgresql-contrib redis-server postfix fail2ban ufw apache2-utils sudo
+apt-get install -yq curl ca-certificates gnupg git unzip rsync build-essential python3 python3-venv python3-pip nginx certbot python3-certbot-nginx php-fpm php-cli php-mbstring php-xml php-curl php-zip php-gd php-bcmath php-intl postgresql postgresql-contrib redis-server postfix fail2ban ufw apache2-utils sudo docker.io
+systemctl enable --now docker >/dev/null 2>&1 || warn "Docker service could not be started"
 if ! command -v node >/dev/null 2>&1 || [[ "$(node -v | sed 's/v//' | cut -d. -f1)" -lt 22 ]]; then curl -fsSL https://deb.nodesource.com/setup_22.x | bash -; apt-get install -yq nodejs; fi
 id -u "$PANEL_USER" >/dev/null 2>&1 || useradd -r -m -d "$PANEL_DIR" -s /bin/bash "$PANEL_USER"; mkdir -p "$PANEL_DIR"
 if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';"; fi
@@ -38,7 +39,7 @@ cd "$PANEL_DIR"; sudo -u "$PANEL_USER" npm install --no-audit --no-fund; sudo -u
 cat > /etc/systemd/system/servoman.service <<EOF
 [Unit]
 Description=SERVOMAN Control Panel
-After=network.target postgresql.service redis-server.service
+After=network.target postgresql.service redis-server.service docker.service
 [Service]
 Type=simple
 User=$PANEL_USER
