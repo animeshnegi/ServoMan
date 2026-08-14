@@ -1,0 +1,90 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import path from "node:path";
+
+const exec = promisify(execFile);
+const NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/;
+const ROOTS = ["/var/www", "/www", "/srv", "/home"];
+const FRAMEWORKS = new Set(["Flask", "Django", "FastAPI", "Other"]);
+const MODES = new Set(["gunicorn", "uvicorn", "uwsgi"]);
+
+function fail(message: string, status = 400): never { throw Object.assign(new Error(message), { status }); }
+function safeName(v: string, label: string) { if (!NAME.test(v) || v.includes("..")) fail(`Invalid ${label}`); return v; }
+function safePath(v: string) { const r = path.resolve(v); if (!ROOTS.some((x) => r === x || r.startsWith(x + path.sep))) fail("Project path is outside allowed website roots"); return r; }
+async function run(command: string, args: string[], cwd?: string, timeout = 180000) {
+  try { return await exec(command, args, { cwd, timeout, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: "1", PYTHONUNBUFFERED: "1" } }); }
+  catch (e: any) { throw Object.assign(new Error(String(e?.stderr || e?.stdout || e?.message || "command failed").replace(/\s+/g, " ").slice(0, 1200)), { status: 500 }); }
+}
+async function privileged(command: string, args: string[], cwd?: string, timeout = 180000) {
+  if (typeof process.getuid === "function" && process.getuid() === 0) return run(command, args, cwd, timeout);
+  return run("sudo", ["-n", command, ...args], cwd, timeout);
+}
+
+export interface PythonConfig {
+  name: string; path: string; version?: string; framework?: string; port: number; mode?: string;
+  entrypoint?: string; workers?: number; user?: string; env?: Record<string, string>;
+}
+
+function pythonBin(version = "3.12") {
+  if (!/^3\.([0-9]+)$/.test(version)) fail("Invalid Python version");
+  return `python${version}`;
+}
+function venvPath(projectPath: string) { return path.join(projectPath, ".venv"); }
+function serviceName(name: string) { return `servoman-py-${safeName(name, "project name")}`; }
+
+function commandFor(c: PythonConfig) {
+  const mode = c.mode || (c.framework === "FastAPI" ? "uvicorn" : "gunicorn");
+  if (!MODES.has(mode)) fail("Unsupported Python process mode");
+  const entry = c.entrypoint || (c.framework === "FastAPI" ? "main:app" : c.framework === "Django" ? "project.wsgi:application" : "app:app");
+  if (!/^[a-zA-Z0-9_.-]+:[a-zA-Z0-9_.-]+$/.test(entry)) fail("Invalid Python entrypoint");
+  const venv = path.join(venvPath(safePath(c.path)), "bin");
+  const workers = Math.max(1, Math.min(16, Math.floor(c.workers || 2)));
+  if (mode === "uvicorn") return `${venv}/uvicorn ${entry} --host 127.0.0.1 --port ${c.port} --workers ${workers}`;
+  if (mode === "uwsgi") return `${venv}/uwsgi --http 127.0.0.1:${c.port} --module ${entry} --processes ${workers}`;
+  return `${venv}/gunicorn ${entry} --bind 127.0.0.1:${c.port} --workers ${workers} --access-logfile - --error-logfile -`;
+}
+
+export async function preparePythonProject(c: PythonConfig) {
+  const projectPath = safePath(c.path); const name = safeName(c.name, "project name");
+  if (!FRAMEWORKS.has(c.framework || "Flask")) fail("Unsupported Python framework");
+  await privileged("mkdir", ["-p", projectPath]);
+  const py = pythonBin(c.version || "3.12");
+  const check = await privileged("sh", ["-lc", `command -v ${py}`]);
+  if (!check.stdout.trim()) fail(`${py} is not installed on this server`, 503);
+  const venv = venvPath(projectPath);
+  await privileged("${PYTHON}", [], projectPath).catch(() => undefined);
+  await privileged("sh", ["-lc", `if [ ! -x '${venv}/bin/python' ]; then ${py} -m venv '${venv}'; fi`], projectPath);
+  await privileged("chown", ["-R", `${c.user || "www-data"}:${c.user || "www-data"}`, projectPath]);
+  await run("python", ["-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], venv, 180000).catch(() => undefined);
+  return { name, path: projectPath, venv, python: py };
+}
+
+export async function installPythonDependencies(c: PythonConfig) {
+  const projectPath = safePath(c.path); const venv = venvPath(projectPath);
+  await preparePythonProject(c);
+  const req = path.join(projectPath, "requirements.txt");
+  const fs = await import("node:fs/promises");
+  try { await fs.access(req); } catch { fail("requirements.txt not found", 404); }
+  await privileged("sh", ["-lc", `'${venv}/bin/pip' install -r '${req}'`], projectPath, 300000);
+  return (await privileged("sh", ["-lc", `'${venv}/bin/pip' list --format=freeze | wc -l`], projectPath)).stdout.trim();
+}
+
+export async function writePythonService(c: PythonConfig) {
+  const projectPath = safePath(c.path); const svc = serviceName(c.name); const command = commandFor(c);
+  const user = c.user && NAME.test(c.user) ? c.user : "www-data";
+  const envLines = Object.entries(c.env || {}).filter(([k, v]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && !/[\n\r]/.test(v)).map(([k, v]) => `Environment=${k}=${v.replace(/%/g, "%%")}`).join("\n");
+  const unit = `[Unit]\nDescription=ServoMan Python app ${c.name}\nAfter=network.target\n\n[Service]\nType=simple\nUser=${user}\nGroup=${user}\nWorkingDirectory=${projectPath}\n${envLines}\nExecStart=${command}\nRestart=always\nRestartSec=3\nTimeoutStopSec=15\n\n[Install]\nWantedBy=multi-user.target\n`;
+  const tmp = `/tmp/${svc}.service`;
+  await privileged("sh", ["-lc", `cat > '${tmp}' <<'EOF'\n${unit}EOF`]);
+  await privileged("install", ["-m", "0644", tmp, `/etc/systemd/system/${svc}.service`]);
+  await privileged("rm", ["-f", tmp]);
+  await privileged("systemctl", ["daemon-reload"]);
+  return { service: svc, command };
+}
+
+export async function pythonStart(c: PythonConfig) { await writePythonService(c); const svc = serviceName(c.name); await privileged("systemctl", ["enable", svc]); await privileged("systemctl", ["restart", svc]); return (await privileged("systemctl", ["is-active", svc])).stdout.trim(); }
+export async function pythonStop(name: string) { const svc = serviceName(name); await privileged("systemctl", ["stop", svc]); return (await privileged("systemctl", ["is-active", svc])).stdout.trim(); }
+export async function pythonRestart(c: PythonConfig) { return pythonStart(c); }
+export async function pythonStatus(name: string) { const svc = serviceName(name); return (await privileged("systemctl", ["is-active", svc])).stdout.trim(); }
+export async function pythonLogs(name: string, lines = 200) { const svc = serviceName(name); const n = Math.max(1, Math.min(2000, Number(lines) || 200)); return (await privileged("journalctl", ["-u", svc, "-n", String(n), "--no-pager"])).stdout; }
+export async function pythonRemove(name: string) { const svc = serviceName(name); await privileged("systemctl", ["disable", "--now", svc]).catch(() => undefined); await privileged("rm", ["-f", `/etc/systemd/system/${svc}.service`]); await privileged("systemctl", ["daemon-reload"]); }
