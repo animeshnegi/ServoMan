@@ -14,7 +14,8 @@
 - [ ] Verify Docker/service/cron actions against a disposable test service first.
 - [ ] Verify terminal and file APIs enforce an allowlist and path boundaries.
 - [ ] Review audit logs after every privileged action.
-- [ ] Run `npm ci`, `npx tsc --noEmit`, `npm run lint`, and `npm run build`.
+- [ ] Run `npm install --no-audit --no-fund`, `npm run typecheck`, `npm run lint`, and `npm run build`.
+- [ ] Confirm the Next.js 16 `proxy.ts` boundary is active; `middleware.ts` is intentionally absent.
 
 ## Security rule
 
