@@ -1,0 +1,10 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+const exec = promisify(execFile);
+const NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/;
+const IMAGE = /^[a-zA-Z0-9][a-zA-Z0-9._\/-]*(?::[a-zA-Z0-9._-]+)?(?:@[a-fA-F0-9:]+)?$/;
+function validName(v: string) { if (!NAME.test(v)) throw Object.assign(new Error("Invalid container name"), { status: 400 }); }
+function ports(v: string) { if (!v) return []; return v.split(",").map((item) => { const p = item.trim(); const m = p.match(/^(\d{1,5}):(\d{1,5})(?:\/(tcp|udp))?$/i); if (!m) throw Object.assign(new Error(`Invalid port mapping: ${p}`), { status: 400 }); const host = Number(m[1]); const container = Number(m[2]); if (host < 1 || host > 65535 || container < 1 || container > 65535) throw Object.assign(new Error("Port must be 1-65535"), { status: 400 }); return `${host}:${container}/${(m[3] || "tcp").toLowerCase()}`; }); }
+async function docker(args: string[]) { try { return await exec("docker", args, { timeout: 180_000, maxBuffer: 2 * 1024 * 1024 }); } catch (e: any) { throw Object.assign(new Error(String(e?.stderr || e?.message || "Docker operation failed").slice(0, 1000)), { status: 500 }); } }
+export async function createContainer(name: string, image: string, portMappings = "", restartPolicy = "always") { validName(name); if (!IMAGE.test(image)) throw Object.assign(new Error("Invalid Docker image"), { status: 400 }); if (!["no", "on-failure", "always", "unless-stopped"].includes(restartPolicy)) throw Object.assign(new Error("Invalid restart policy"), { status: 400 }); const args = ["run", "-d", "--name", name, "--restart", restartPolicy]; for (const p of ports(portMappings)) args.push("-p", p); args.push(image); const result = await docker(args); return result.stdout.trim(); }
+export async function removeContainer(name: string) { validName(name); await docker(["rm", "-f", name]); }
