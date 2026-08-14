@@ -26,15 +26,18 @@ Implemented:
 - Real SSH key generation.
 - Real SMTP connectivity/authentication testing.
 - Real Asterisk endpoint inspection and PJSIP test calls when Asterisk is installed/configured.
-- Installer provisioning for the trusted proxy secret, Certbot, PHP-FPM, Docker and controlled sudo policy.
+- Real Python application process manager: per-project virtual environments, Flask/Django/FastAPI support, Gunicorn/Uvicorn/uWSGI modes, dependency installation, systemd lifecycle and logs.
+- Python deployment API with explicit path, port, framework, entrypoint, worker and environment validation.
+- Git repository management API secured by RBAC.
+- GitHub management API for repositories, branches, commits, releases, Actions workflow dispatch, issues and branch creation when a server-side fine-grained token is configured.
+- Installer provisioning for Python tooling, the trusted proxy secret, Certbot, PHP-FPM, Docker and controlled sudo policy.
 - CI for dependency installation, typecheck, lint and production build.
 - Production deployment and security test checklists.
 
 Intentionally not faked:
 
 - Campaign delivery remains disabled because the existing schema does not contain actual recipient addresses and message content. The API returns an explicit 501 instead of pretending mail was sent.
-- Python process management and application-specific deployment commands remain explicit integration work because the existing schema does not safely define an entrypoint/process contract.
-- Site operations require a real Nginx virtual-host config; no database-only status is reported.
+- Any runtime that is not installed/configured returns an explicit error instead of a successful-looking status.
 
 ## Production validation gate
 
