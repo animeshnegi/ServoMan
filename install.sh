@@ -15,7 +15,7 @@ PROXY_SECRET="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 
 REPO_DIR="$(pwd)"
 log "Installing OS packages"
 apt-get update -yq
-apt-get install -yq curl ca-certificates gnupg git unzip rsync build-essential python3 python3-venv python3-pip nginx postgresql postgresql-contrib redis-server postfix fail2ban ufw apache2-utils sudo
+apt-get install -yq curl ca-certificates gnupg git unzip rsync build-essential python3 python3-venv python3-pip nginx certbot python3-certbot-nginx php-fpm php-cli php-mbstring php-xml php-curl php-zip php-gd php-bcmath php-intl postgresql postgresql-contrib redis-server postfix fail2ban ufw apache2-utils sudo
 if ! command -v node >/dev/null 2>&1 || [[ "$(node -v | sed 's/v//' | cut -d. -f1)" -lt 22 ]]; then curl -fsSL https://deb.nodesource.com/setup_22.x | bash -; apt-get install -yq nodejs; fi
 id -u "$PANEL_USER" >/dev/null 2>&1 || useradd -r -m -d "$PANEL_DIR" -s /bin/bash "$PANEL_USER"
 mkdir -p "$PANEL_DIR"
