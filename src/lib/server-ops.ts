@@ -19,7 +19,7 @@ export class ServerOperationError extends Error {
 
 function assertSafeName(value: string, label: string) {
   if (!SAFE_NAME.test(value) || value.includes("..")) {
-    throw new ServerOperationError(`Invalid ${label}`, 400);
+    throw new ServerOperationError("Invalid " + label, 400);
   }
 }
 
@@ -58,7 +58,7 @@ async function ensureBackupRoot() {
 
 function backupPath(name: string, ext: string) {
   assertSafeName(name, "backup name");
-  return path.join(BACKUP_ROOT, `${name}${ext}`);
+  return path.join(BACKUP_ROOT, name + ext);
 }
 
 function safeWebsiteRoot(target: string) {
@@ -120,7 +120,7 @@ export async function firewallRule(action: "allow" | "deny" | "delete", port: nu
       ? ["delete", "allow", "from", source, "to", "any", "port", String(port), "proto", proto]
       : [action, "from", source, "to", "any", "port", String(port), "proto", proto];
   } else {
-    args = action === "delete" ? ["delete", "allow", `${port}/${proto}`] : [action, `${port}/${proto}`];
+    args = action === "delete" ? ["delete", "allow", String(port) + "/" + proto] : [action, String(port) + "/" + proto];
   }
 
   await privileged("ufw", args);
@@ -141,7 +141,10 @@ export async function issueCertificate(domain: string, email: string, renew = fa
 }
 
 export async function renewCertificates(dryRun = false) {
-  return (await privileged("certbot", dryRun ? ["renew", "--dry-run", "--non-interactive"] : ["renew", "--non-interactive"], { timeout: 180_000 })).stdout;
+  const args = dryRun
+    ? ["renew", "--dry-run", "--non-interactive"]
+    : ["renew", "--non-interactive"];
+  return (await privileged("certbot", args, { timeout: 180_000 })).stdout;
 }
 
 export async function backupDirectory(source: string, name: string) {
@@ -167,20 +170,20 @@ export async function backupDatabase(name: string, engine: string) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 
   if (engine.toLowerCase().includes("postgres")) {
-    const file = backupPath(`${name}-${timestamp}`, ".sql");
+    const file = backupPath(name + "-" + timestamp, ".sql");
     await privileged("pg_dump", ["--format=plain", "--no-owner", "--no-privileges", "--file", file, name], { timeout: 300_000 });
     const stat = await privileged("stat", ["-c", "%s", file]);
     return { path: file, sizeMb: Math.max(1, Math.ceil(Number(stat.stdout) / 1048576)) };
   }
 
   if (engine.toLowerCase().includes("mysql") || engine.toLowerCase().includes("maria")) {
-    const file = backupPath(`${name}-${timestamp}`, ".sql");
+    const file = backupPath(name + "-" + timestamp, ".sql");
     await privileged("mysqldump", ["--single-transaction", "--routines", "--events", "--result-file", file, name], { timeout: 300_000 });
     const stat = await privileged("stat", ["-c", "%s", file]);
     return { path: file, sizeMb: Math.max(1, Math.ceil(Number(stat.stdout) / 1048576)) };
   }
 
-  throw new ServerOperationError(`Unsupported database engine: ${engine}`, 400);
+  throw new ServerOperationError("Unsupported database engine: " + engine, 400);
 }
 
 export async function restoreDatabase(file: string, name: string, engine: string) {
@@ -189,9 +192,9 @@ export async function restoreDatabase(file: string, name: string, engine: string
   if (engine.toLowerCase().includes("postgres")) {
     await privileged("psql", ["--dbname", name, "--file", archive], { timeout: 300_000 });
   } else if (engine.toLowerCase().includes("mysql") || engine.toLowerCase().includes("maria")) {
-    await privileged("mysql", [name, "--execute", `source ${archive}`], { timeout: 300_000 });
+    await privileged("mysql", [name, "--execute", "source " + archive], { timeout: 300_000 });
   } else {
-    throw new ServerOperationError(`Unsupported database engine: ${engine}`, 400);
+    throw new ServerOperationError("Unsupported database engine: " + engine, 400);
   }
 }
 
@@ -205,9 +208,9 @@ export async function generateSshKey(name: string, keyType = "ed25519", comment 
   const args = ["-t", keyType, "-f", file, "-N", "", "-C", comment.slice(0, 200)];
   if (keyType === "rsa") args.splice(2, 0, "-b", "4096");
   await privileged("ssh-keygen", args);
-  const pub = (await privileged("cat", [`${file}.pub`])).stdout;
+  const pub = (await privileged("cat", [file + ".pub"])).stdout;
   await privileged("chmod", ["600", file]);
-  await privileged("chmod", ["644", `${file}.pub"]);
+  await privileged("chmod", ["644", file + ".pub"]);
   return { keyPath: file, publicKey: pub };
 }
 
@@ -218,18 +221,18 @@ export async function asterisk(command: string) {
 
 export async function voipCall(destination: string) {
   if (!/^PJSIP\/[a-zA-Z0-9_.-]{1,32}$/.test(destination)) throw new ServerOperationError("Destination must be PJSIP/<extension>", 400);
-  return asterisk(`channel originate ${destination} application Echo`);
+  return asterisk("channel originate " + destination + " application Echo");
 }
 
 export async function voipTrunkTest(name: string) {
   assertSafeName(name, "trunk name");
-  return asterisk(`pjsip show endpoint ${name}`);
+  return asterisk("pjsip show endpoint " + name);
 }
 
 export async function systemReboot(delaySeconds = 60) {
   const delay = Math.max(30, Math.min(3600, Math.floor(delaySeconds)));
-  await privileged("shutdown", ["-r", `+${Math.ceil(delay / 60)}`, "ServoMan requested reboot"]);
-  return `reboot scheduled in approximately ${Math.ceil(delay / 60)} minute(s)`;
+  await privileged("shutdown", ["-r", "+" + Math.ceil(delay / 60), "ServoMan requested reboot"]);
+  return "reboot scheduled in approximately " + Math.ceil(delay / 60) + " minute(s)";
 }
 
 export async function cleanup(target: string) {
