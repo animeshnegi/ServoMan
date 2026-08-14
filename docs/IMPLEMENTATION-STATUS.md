@@ -1,6 +1,6 @@
 # Hardening implementation status
 
-This branch establishes a fail-closed security boundary for the panel and API surface.
+This branch establishes a fail-closed security boundary and replaces database-only privileged operations with real host adapters where the required system service is available.
 
 Implemented:
 
@@ -12,11 +12,30 @@ Implemented:
 - Server-derived audit actor for CRUD operations; omitted actors are recorded as `system`, never `admin`.
 - ID and payload validation in generic CRUD.
 - Sensitive-value response redaction.
-- Request rate limiting for panel/API traffic.
+- Request/action rate limiting.
 - Public health endpoint and separately token-authenticated Git webhook boundary.
-- Git webhook branch restriction so a push cannot select an arbitrary deployment branch.
+- Git webhook branch restriction.
+- Real Nginx site lifecycle and virtual-host configuration.
+- Real PostgreSQL/MySQL database and database-user lifecycle adapters.
+- Real Docker container lifecycle and logs.
+- Real UFW firewall operations.
+- Real Certbot/Let's Encrypt issuance, renewal and dry-run.
+- Real website/database backup and restore adapters with filesystem boundaries.
+- Real systemd service operations.
+- Real admin-only cron execution.
+- Real SSH key generation.
+- Real SMTP connectivity/authentication testing.
+- Real Asterisk endpoint inspection and PJSIP test calls when Asterisk is installed/configured.
+- Installer provisioning for the trusted proxy secret, Certbot, PHP-FPM, Docker and controlled sudo policy.
 - CI for dependency installation, typecheck, lint and production build.
-- Next.js upgraded to 16.2.11, including the current 16.x security patch available when this branch was hardened.
 - Production deployment and security test checklists.
 
-The privileged action implementation in `/api/action` is intentionally kept behind the admin-only boundary. Its current product behavior still contains simulated operations in several areas (for example some backup, service, SSL and system actions). Before production use, those operations should be replaced or verified against real server adapters and tested on a disposable host. The security boundary must remain in place while doing that integration.
+Intentionally not faked:
+
+- Campaign delivery remains disabled because the existing schema does not contain actual recipient addresses and message content. The API returns an explicit 501 instead of pretending mail was sent.
+- Python process management and application-specific deployment commands remain explicit integration work because the existing schema does not safely define an entrypoint/process contract.
+- Site operations require a real Nginx virtual-host config; no database-only status is reported.
+
+## Production validation gate
+
+Install this branch on a disposable Ubuntu VPS and exercise every adapter before merging to `main`. GitHub currently reports no Actions run/status for the latest connector commits, so CI is not claimed as passed until an actual workflow run is observed.
