@@ -3,9 +3,23 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SERVOMAN — Lightweight Server Control Panel",
+  title: {
+    default: "SERVOMAN — Server Control Panel",
+    template: "%s | SERVOMAN",
+  },
   description:
-    "SERVOMAN: a lightweight self-hosted control panel for Ubuntu 24.04 cloud servers — websites, SSL v2, record-verified email & campaigns, VOIP, git push-to-deploy, DNS, backups, Docker, terminal, monitoring, AI assistant and security scoring.",
+    "SERVOMAN is a practical self-hosted control panel for managing websites, domains, SSL, DNS, databases, backups, deployments, containers, server tasks and security from one place.",
+  applicationName: "SERVOMAN",
+  keywords: [
+    "server control panel",
+    "self-hosted server management",
+    "website management",
+    "SSL management",
+    "DNS management",
+    "server monitoring",
+    "Docker management",
+    "Git deployment",
+  ],
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
