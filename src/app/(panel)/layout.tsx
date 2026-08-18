@@ -117,7 +117,6 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="flex min-h-screen bg-[#0a0e1a] text-zinc-200">
-      {/* sidebar */}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-40 w-60 shrink-0 border-r border-white/[0.06] bg-[#0b101d] transition-transform lg:static lg:translate-x-0",
@@ -135,7 +134,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
                 SERVO<span className="bg-gradient-to-r from-sky-400 to-violet-400 bg-clip-text text-transparent">MAN</span>
               </div>
               <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-zinc-600">
-                Lightweight Server Panel
+                Server Management
               </div>
             </div>
             <button className="ml-auto text-zinc-500 lg:hidden" onClick={() => setOpen(false)}>
@@ -182,14 +181,13 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> agent online
               </span>
             </div>
-            <div className="mt-1">Ubuntu 24.04 LTS · ~120 MB footprint</div>
+            <div className="mt-1">Ubuntu 24.04 LTS · small footprint</div>
           </div>
         </div>
       </aside>
 
       {open && <div className="fixed inset-0 z-30 bg-black/60 lg:hidden" onClick={() => setOpen(false)} />}
 
-      {/* main */}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 flex items-center gap-4 border-b border-white/[0.06] bg-[#0a0e1a]/85 px-5 py-3 backdrop-blur">
           <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-500/60 to-transparent" />
@@ -199,7 +197,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-white">{title}</div>
             <div className="hidden text-[11px] text-zinc-600 sm:block">
-              servoman-node · agent v3.0 · lightweight
+              servoman-node · live server information
             </div>
           </div>
           <div className="ml-auto flex items-center gap-4">
@@ -241,8 +239,8 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
         </main>
 
         <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.05] px-7 py-3 text-[11px] text-zinc-700">
-          <span>SERVOMAN — everything cPanel &amp; aaPanel do, plus an AI ops assistant, push-to-deploy, record-verified email and security scoring.</span>
-          <span className="font-medium text-zinc-600">lightweight · single process · ~120 MB RAM</span>
+          <span>SERVOMAN brings everyday server work into one place: websites, DNS, SSL, backups, deployments, containers, monitoring and security.</span>
+          <span className="font-medium text-zinc-600">lightweight · self-hosted · built for practical operations</span>
         </footer>
       </div>
     </div>
