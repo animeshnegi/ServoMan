@@ -11,12 +11,12 @@ interface Msg {
 }
 
 const SUGGESTIONS = [
-  "Is anything wrong with my server?",
-  "Which certificates are expiring soon?",
-  "When was the last backup?",
-  "How much RAM is left?",
-  "Run a security review",
-  "nginx reload command",
+  "Is anything unusual on my server?",
+  "Which SSL certificates need attention?",
+  "When did the last backup finish?",
+  "How much memory is available right now?",
+  "Give me a quick security check",
+  "What command reloads nginx?",
 ];
 
 export default function AiPage() {
@@ -24,7 +24,7 @@ export default function AiPage() {
     {
       role: "assistant",
       content:
-        "Hi! I'm **SERVOMAN AI** — your operations assistant. I read live metrics and panel data in real time, so I can answer questions about **SSL, backups, email sending domains, security, performance, memory, disk** and more. Type **help** to see what I can do.",
+        "Hi — I’m **SERVOMAN AI**. I can help you make sense of what is happening on the server without making you dig through logs and settings first. Ask about **SSL certificates, backups, websites, email, DNS, security, CPU, memory, disk space** or other panel features. If you are not sure what to ask, type **help** and I’ll point you in the right direction.",
       engine: "local",
     },
   ]);
@@ -51,9 +51,9 @@ export default function AiPage() {
         }),
       });
       const data = await res.json();
-      setMsgs((m) => [...m, { role: "assistant", content: data.reply || "Hmm, I couldn't process that.", engine: data.engine }]);
+      setMsgs((m) => [...m, { role: "assistant", content: data.reply || "I could not get a useful answer for that request.", engine: data.engine }]);
     } catch {
-      setMsgs((m) => [...m, { role: "assistant", content: "The AI engine is unreachable right now." }]);
+      setMsgs((m) => [...m, { role: "assistant", content: "The assistant is not reachable right now. Check the server logs and try again in a moment." }]);
     } finally {
       setBusy(false);
     }
@@ -63,7 +63,7 @@ export default function AiPage() {
     <div className="space-y-5">
       <PageHeader
         title="AI Assistant"
-        subtitle="A cPanel/aaPanel-first: ask questions about your server in plain language. Uses OpenAI when OPENAI_API_KEY is set, otherwise a built-in ops engine."
+        subtitle="Ask about the server in ordinary language. SERVOMAN can use the configured OpenAI integration when available, or fall back to its built-in operations engine."
       />
 
       <Card pad={false} className="overflow-hidden">
@@ -73,7 +73,7 @@ export default function AiPage() {
           </div>
           <div className="text-sm font-semibold text-zinc-100">SERVOMAN AI</div>
           <span className="ml-2 flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" /> live server context
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" /> connected to live panel data
           </span>
         </div>
 
@@ -97,7 +97,7 @@ export default function AiPage() {
                 <Markdown text={m.content} />
                 {m.role === "assistant" && m.engine && (
                   <div className="mt-2 flex items-center gap-1 text-[9px] uppercase tracking-wider text-zinc-600">
-                    <Cpu size={10} /> {m.engine === "openai" ? "openai" : "ops engine"}
+                    <Cpu size={10} /> {m.engine === "openai" ? "openai" : "local ops engine"}
                   </div>
                 )}
               </div>
@@ -105,7 +105,7 @@ export default function AiPage() {
           ))}
           {busy && (
             <div className="flex items-center gap-2 text-xs text-zinc-500">
-              <Spinner size={14} /> analyzing live server state…
+              <Spinner size={14} /> Checking the current server state…
             </div>
           )}
           <div ref={bottomRef} />
@@ -128,7 +128,7 @@ export default function AiPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && send(input)}
-              placeholder="Ask about SSL, backups, security, performance…"
+              placeholder="Ask about your server, websites, SSL, backups or security…"
               className="flex-1 rounded-lg border border-white/10 bg-black/25 px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-sky-500/60"
             />
             <button
